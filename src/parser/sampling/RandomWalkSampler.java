@@ -1,0 +1,146 @@
+package parser.sampling;
+
+import java.util.*;
+
+import gnu.trove.list.array.*;
+import parser.*;
+import utils.Utils;
+
+public class RandomWalkSampler {
+	
+	Random r;
+	Options options;
+	final int labelLossType;
+	
+	public RandomWalkSampler(int seed, Options options) {
+		r = new Random(seed);
+		this.options = options;
+		labelLossType = options.labelLossType;
+	}
+	
+	public RandomWalkSampler(Options options) {
+		r = new Random(1/*System.currentTimeMillis()*/);
+		this.options = options;
+		labelLossType = options.labelLossType;
+	}
+	
+	public RandomWalkSampler(Random r, Options options) {
+		this.r = r;
+		this.options = options;
+		labelLossType = options.labelLossType;
+	}
+	
+    public DependencyInstance uniformRandomWalkSampling(DependencyInstance inst,
+    		LocalFeatureData lfd, boolean addLoss)
+    {
+        //int cnt = 0;
+    	int len = inst.length;
+    	
+		DependencyInstance predInst = new DependencyInstance(inst);
+		predInst.heads = new int[len];
+		predInst.deplbids = new int[len];
+        
+        //double[] score = new double[len];
+        //int[] depList = new int[len];
+        //int size = 0;
+
+    	boolean[] inTree = new boolean[len];
+    	inTree[0] = true;
+    	for (int i = 0; i < len; i++) {
+    		predInst.heads[i] = -1;
+    	}
+    	
+    	for (int i = 1; i < len; i++) {
+    		int curr = i;
+    		while (!inTree[curr]) {
+
+    			//int sample = samplePoint(score, size, r);
+    			int st = lfd.startIndex(curr);
+    			int size = lfd.endIndex(curr) - st;
+    			int sample = r.nextInt(size);
+    			predInst.heads[curr] = lfd.getHead(st+sample);
+    			//predInst.heads[curr] = depList[sample];
+    			curr = predInst.heads[curr];
+    		}
+    		curr = i;
+    		while (!inTree[curr]) {
+    			inTree[curr] = true;
+    			curr = predInst.heads[curr]; 
+    		}
+    	}
+    	
+    	return predInst;
+    }
+    
+    public DependencyInstance randomWalkSampling(DependencyInstance inst,
+    		LocalFeatureData lfd, boolean addLoss)
+    {
+        //int cnt = 0;
+    	int len = inst.length;
+    	
+		DependencyInstance predInst = new DependencyInstance(inst);
+		predInst.heads = new int[len];
+		predInst.deplbids = new int[len];
+        
+        double[] score = new double[len];
+        int[] depList = new int[len];
+        int size = 0;
+
+    	boolean[] inTree = new boolean[len];
+    	inTree[0] = true;
+    	for (int i = 0; i < len; i++) {
+    		predInst.heads[i] = -1;
+    	}
+    	
+    	for (int i = 1; i < len; i++) {
+    		int curr = i;
+    		while (!inTree[curr]) {
+    			// sample new head 
+                size = 0;
+
+    			for (int candH = 0; candH < len; candH++) {
+    				if (candH == curr || lfd.isPruned(candH, curr))
+    					continue;
+    				
+    				double s = lfd.getArcScore(candH, curr);
+    				
+    				if (addLoss) {
+    					  if (candH != inst.heads[curr])
+    						s += 1.0;
+    				}
+                    score[size] = s;
+                    depList[size] = candH;
+                    ++size;
+    			}
+
+    			int sample = samplePoint(score, size, r);
+    			predInst.heads[curr] = depList[sample];
+    			curr = predInst.heads[curr];
+    		}
+    		curr = i;
+    		while (!inTree[curr]) {
+    			inTree[curr] = true;
+    			curr = predInst.heads[curr]; 
+    		}
+    	}
+    	
+    	return predInst;
+    }
+    
+    private int samplePoint(double[] score, int N, Random r) {
+    	double sumScore = Double.NEGATIVE_INFINITY;
+    	for (int i = 0; i < N; i++) {
+    		sumScore = Utils.logSumExp(sumScore, score[i]);
+    	}
+    	double logp = Math.log(r.nextDouble() + 1e-60);
+    	double cur = Double.NEGATIVE_INFINITY;
+    	int ret = 0;
+    	for (; ret < N; ret++) {
+    		cur = Utils.logSumExp(cur, score[ret]);
+    		if (logp + sumScore < cur)
+    			break;
+    	}
+    	return ret;
+    }
+
+}
